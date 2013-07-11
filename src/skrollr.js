@@ -19,7 +19,7 @@
 		init: function(options) {
 			return _instance || new Skrollr(options);
 		},
-		VERSION: '0.6.6'
+		VERSION: '0.6.9'
 	};
 
 	//Minify optimization.
@@ -50,7 +50,7 @@
 	var DEFAULT_DURATION = 1000;//ms
 	var MOBILE_DECELERATION = 0.0006;//pixel/ms²
 
-	var SMOOTH_SCROLLING_DURATION = 200;
+	var DEFAULT_SMOOTH_SCROLLING_DURATION = 200;//ms
 
 	var ANCHOR_START = 'start';
 	var ANCHOR_END = 'end';
@@ -147,7 +147,7 @@
 			requestAnimFrame = function(callback) {
 				//How long did it take to render?
 				var deltaTime = _now() - lastTime;
-				var delay = Math.max(0, 33 - deltaTime);
+				var delay = Math.max(0, 1000 / 60 - deltaTime);
 
 				window.setTimeout(function() {
 					lastTime = _now();
@@ -227,7 +227,7 @@
 			}
 		}
 
-		_edgeStrategy = options.edgeStrategy || 'ease';
+		_edgeStrategy = options.edgeStrategy || 'set';
 
 		_listeners = {
 			//Function to be called right before rendering.
@@ -245,6 +245,7 @@
 		}
 
 		_smoothScrollingEnabled = options.smoothScrolling !== false;
+		_smoothScrollingDuration = options.smoothScrollingDuration || DEFAULT_SMOOTH_SCROLLING_DURATION;
 
 		//Dummy object. Will be overwritten in the _render method when smooth scrolling is calculated.
 		_smoothScrolling = {
@@ -554,12 +555,6 @@
 
 		if(_isMobile) {
 			_mobileOffset = Math.min(Math.max(top, 0), _maxKeyFrame);
-
-			//That's were we actually "scroll" on mobile.
-			if(_skrollrBody) {
-				//Set the transform ("scroll it").
-				skrollr.setStyle(_skrollrBody, 'transform', 'translate(0, ' + -(_mobileOffset) + 'px) ' + _translateZ);
-			}
 		} else {
 			window.scrollTo(0, top);
 		}
@@ -621,6 +616,8 @@
 						initialElement.blur();
 					}
 
+					_instance.stopAnimateTo();
+
 					initialElement = e.target;
 					initialTouchY = lastTouchY = currentTouchY;
 					initialTouchX = currentTouchX;
@@ -631,7 +628,7 @@
 					deltaY = currentTouchY - lastTouchY;
 					deltaTime = currentTouchTime - lastTouchTime;
 
-					_instance.setScrollTop(_mobileOffset - deltaY);
+					_instance.setScrollTop(_mobileOffset - deltaY, true);
 
 					lastTouchY = currentTouchY;
 					lastTouchTime = currentTouchTime;
@@ -805,6 +802,11 @@
 					case 'reset':
 						_reset(element);
 						continue;
+					case 'ease':
+						//Handle this case like it would be exactly at first/last keyframe and just pass it on.
+						frame = firstOrLastFrame.frame;
+						break;
+					default:
 					case 'set':
 						var props = firstOrLastFrame.props;
 
@@ -817,11 +819,6 @@
 						}
 
 						continue;
-					default:
-					case 'ease':
-						//Handle this case like it would be exactly at first/last keyframe and just pass it on.
-						frame = firstOrLastFrame.frame;
-						break;
 				}
 			} else {
 				//Did we handle an edge last time?
@@ -888,7 +885,7 @@
 				renderTop = (_scrollAnimation.startTop + progress * _scrollAnimation.topDiff) | 0;
 			}
 
-			_instance.setScrollTop(renderTop);
+			_instance.setScrollTop(renderTop, true);
 		}
 		//Smooth scrolling only if there's no animation running and if we're not on mobile.
 		else if(!_isMobile) {
@@ -901,17 +898,23 @@
 					topDiff: renderTop - _lastTop,
 					targetTop: renderTop,
 					startTime: _lastRenderCall,
-					endTime: _lastRenderCall + SMOOTH_SCROLLING_DURATION
+					endTime: _lastRenderCall + _smoothScrollingDuration
 				};
 			}
 
 			//Interpolate the internal scroll position (not the actual scrollbar).
 			if(now <= _smoothScrolling.endTime) {
 				//Map the current progress to the new progress using easing function.
-				progress = easings.sqrt((now - _smoothScrolling.startTime) / SMOOTH_SCROLLING_DURATION);
+				progress = easings.sqrt((now - _smoothScrolling.startTime) / _smoothScrollingDuration);
 
 				renderTop = (_smoothScrolling.startTop + progress * _smoothScrolling.topDiff) | 0;
 			}
+		}
+
+		//That's were we actually "scroll" on mobile.
+		if(_isMobile && _skrollrBody) {
+			//Set the transform ("scroll it").
+			skrollr.setStyle(_skrollrBody, 'transform', 'translate(0, ' + -(_mobileOffset) + 'px) ' + _translateZ);
 		}
 
 		//Did the scroll position even change?
@@ -1437,6 +1440,8 @@
 	var _scrollAnimation;
 
 	var _smoothScrollingEnabled;
+
+	var _smoothScrollingDuration;
 
 	//Will contain settins for smooth scrolling if enabled.
 	var _smoothScrolling;
